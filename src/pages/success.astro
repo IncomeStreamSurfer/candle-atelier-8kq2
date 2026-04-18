@@ -1,0 +1,20 @@
+---
+import Base from '../layouts/Base.astro';
+const sessionId = Astro.url.searchParams.get('session_id');
+---
+<Base title="Thank you · Candle Atelier">
+  <section class="max-w-2xl mx-auto px-6 md:px-10 pt-24 pb-32 text-center">
+    <div class="font-serif text-6xl mb-8" style="color:var(--color-ember)">✦</div>
+    <h1 class="text-5xl md:text-6xl mb-6" style="color:var(--color-bone)">Thank you.</h1>
+    <p class="md:text-lg leading-relaxed mb-10" style="color:var(--color-dust)">
+      Your candles are being hand-poured and will ship within two working days. A confirmation is on its way to your inbox.
+    </p>
+    {sessionId && (
+      <p class="text-xs uppercase tracking-[0.25em]" style="color:var(--color-dust)">Ref · {sessionId.slice(0, 14)}…</p>
+    )}
+    <a href="/" class="mt-12 inline-block px-6 py-3 border hairline text-sm tracking-wide hover:bg-white/5" style="color:var(--color-bone)">Return home</a>
+  </section>
+  <script is:inline>
+    try { localStorage.removeItem('ca-cart'); window.dispatchEvent(new Event('ca-cart-updated')); } catch (e) {}
+  </script>
+</Base>

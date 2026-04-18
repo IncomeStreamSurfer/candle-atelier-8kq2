@@ -1,0 +1,137 @@
+---
+import Base from '../../layouts/Base.astro';
+import { supabase, type Product } from '../../lib/supabase';
+
+const { slug } = Astro.params;
+const { data } = await supabase.from('products').select('*').eq('slug', slug).single();
+const p = data as Product | null;
+
+if (!p) {
+  return Astro.redirect('/shop');
+}
+
+const fmt = (pence: number, c: string) =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: c.toUpperCase() }).format(pence / 100);
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: p.name,
+  description: p.description,
+  image: p.image_url,
+  offers: {
+    '@type': 'Offer',
+    price: (p.price_pence / 100).toFixed(2),
+    priceCurrency: p.currency.toUpperCase(),
+    availability: 'https://schema.org/InStock',
+  },
+};
+
+const { data: relatedData } = await supabase
+  .from('products')
+  .select('*')
+  .neq('slug', p.slug)
+  .limit(3);
+const related = (relatedData ?? []) as Product[];
+---
+<Base
+  title={`${p.name} · Candle Atelier`}
+  description={p.description ?? 'Hand-poured candle from Candle Atelier.'}
+  image={p.image_url ?? undefined}
+  schema={schema}
+>
+  <section class="max-w-6xl mx-auto px-6 md:px-10 pt-10 md:pt-16 pb-24">
+    <a href="/shop" class="text-xs uppercase tracking-[0.3em]" style="color:var(--color-dust)">← Back to collection</a>
+    <div class="mt-8 grid md:grid-cols-12 gap-10 md:gap-16">
+      <div class="md:col-span-7">
+        <div class="aspect-[4/5] overflow-hidden relative">
+          <img src={p.image_url ?? ''} alt={p.name} class="w-full h-full object-cover" />
+          <div class="absolute inset-0" style="background:linear-gradient(180deg, transparent 65%, rgba(5,5,5,0.35));"></div>
+        </div>
+      </div>
+      <div class="md:col-span-5 md:sticky md:top-8 md:self-start">
+        <div class="uppercase tracking-[0.4em] text-xs mb-4" style="color:var(--color-ember)">Hand-poured · 180g · 45hr burn</div>
+        <h1 class="text-5xl md:text-6xl leading-[1.02] mb-4" style="color:var(--color-bone)">{p.name}</h1>
+        <div class="text-2xl mb-8" style="color:var(--color-ember)">{fmt(p.price_pence, p.currency)}</div>
+        <p class="leading-relaxed md:text-lg mb-6" style="color:var(--color-dust)">{p.description}</p>
+        <div class="border-t hairline pt-6 mb-8">
+          <div class="uppercase tracking-[0.3em] text-[11px] mb-2" style="color:var(--color-bone)">Notes</div>
+          <div class="text-sm" style="color:var(--color-dust)">{p.notes}</div>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center border hairline">
+            <button data-qty="-" class="w-10 h-12 text-lg hover:bg-white/5" style="color:var(--color-bone)">−</button>
+            <span id="qty" class="w-10 text-center" style="color:var(--color-bone)">1</span>
+            <button data-qty="+" class="w-10 h-12 text-lg hover:bg-white/5" style="color:var(--color-bone)">+</button>
+          </div>
+          <button
+            id="add-to-cart"
+            data-id={p.id}
+            data-slug={p.slug}
+            data-name={p.name}
+            data-price={p.price_pence}
+            data-currency={p.currency}
+            data-image={p.image_url ?? ''}
+            class="flex-1 h-12 bg-[color:var(--color-ember)] text-[color:var(--color-ink)] hover:opacity-90 transition-opacity text-sm tracking-wide"
+          >Add to cart</button>
+        </div>
+        <div class="mt-5 text-xs" style="color:var(--color-dust)">Ships within 2 working days · UK delivery £4 · Free over £60</div>
+      </div>
+    </div>
+  </section>
+
+  {related.length > 0 && (
+    <section class="max-w-6xl mx-auto px-6 md:px-10 pb-24 border-t hairline pt-14">
+      <div class="uppercase tracking-[0.4em] text-xs mb-8" style="color:var(--color-ember)">Also in the collection</div>
+      <div class="grid sm:grid-cols-3 gap-8">
+        {related.map((r) => (
+          <a href={`/product/${r.slug}`} class="group block">
+            <div class="aspect-[4/5] overflow-hidden mb-4 relative">
+              <img src={r.image_url ?? ''} alt={r.name} class="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.03] grayscale-[15%] group-hover:grayscale-0" loading="lazy" />
+            </div>
+            <div class="flex justify-between">
+              <span style="color:var(--color-bone)">{r.name}</span>
+              <span style="color:var(--color-ember)">{fmt(r.price_pence, r.currency)}</span>
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  )}
+
+  <script is:inline>
+    (function () {
+      var qty = 1;
+      var qtyEl = document.getElementById('qty');
+      document.querySelectorAll('[data-qty]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          qty = Math.max(1, qty + (b.getAttribute('data-qty') === '+' ? 1 : -1));
+          if (qtyEl) qtyEl.textContent = String(qty);
+        });
+      });
+      var btn = document.getElementById('add-to-cart');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var item = {
+            id: btn.getAttribute('data-id'),
+            slug: btn.getAttribute('data-slug'),
+            name: btn.getAttribute('data-name'),
+            price_pence: parseInt(btn.getAttribute('data-price') || '0', 10),
+            currency: btn.getAttribute('data-currency'),
+            image: btn.getAttribute('data-image'),
+            quantity: qty,
+          };
+          var cart;
+          try { cart = JSON.parse(localStorage.getItem('ca-cart') || '[]'); } catch (e) { cart = []; }
+          var existing = cart.find(function (c) { return c.id === item.id; });
+          if (existing) existing.quantity += qty;
+          else cart.push(item);
+          localStorage.setItem('ca-cart', JSON.stringify(cart));
+          window.dispatchEvent(new Event('ca-cart-updated'));
+          btn.textContent = 'Added ✓';
+          setTimeout(function () { btn.textContent = 'Add to cart'; }, 1400);
+        });
+      }
+    })();
+  </script>
+</Base>

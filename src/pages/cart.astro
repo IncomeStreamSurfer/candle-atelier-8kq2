@@ -1,0 +1,118 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Cart · Candle Atelier" description="Your candles, ready for checkout.">
+  <section class="max-w-3xl mx-auto px-6 md:px-10 pt-16 pb-24">
+    <div class="uppercase tracking-[0.4em] text-xs mb-4" style="color:var(--color-ember)">Your atelier</div>
+    <h1 class="text-5xl md:text-6xl mb-10" style="color:var(--color-bone)">Cart</h1>
+
+    <div id="empty" class="border hairline p-10 text-center">
+      <p class="mb-6 md:text-lg" style="color:var(--color-dust)">Your cart is quiet. Four scents await.</p>
+      <a href="/shop" class="inline-block px-6 py-3 bg-[color:var(--color-ember)] text-[color:var(--color-ink)] text-sm tracking-wide">Shop the collection</a>
+    </div>
+
+    <div id="lines" class="hidden"></div>
+    <div id="totals" class="hidden mt-8 border-t hairline pt-6">
+      <div class="flex justify-between text-sm mb-2" style="color:var(--color-dust)">
+        <span>Subtotal</span><span id="subtotal"></span>
+      </div>
+      <div class="flex justify-between text-sm mb-4" style="color:var(--color-dust)">
+        <span>Shipping</span><span id="shipping"></span>
+      </div>
+      <div class="flex justify-between text-xl" style="color:var(--color-bone)">
+        <span>Total</span><span id="total" style="color:var(--color-ember)"></span>
+      </div>
+      <button id="checkout" class="mt-8 w-full h-14 bg-[color:var(--color-ember)] text-[color:var(--color-ink)] hover:opacity-90 transition-opacity tracking-wide">
+        Proceed to checkout
+      </button>
+      <div id="err" class="mt-4 text-sm text-red-400 hidden"></div>
+      <div class="mt-4 text-xs text-center" style="color:var(--color-dust)">Secure payment via Stripe · Free UK shipping over £60</div>
+    </div>
+  </section>
+
+  <script is:inline>
+    (function () {
+      function fmt(p) { return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(p / 100); }
+      function read() { try { return JSON.parse(localStorage.getItem('ca-cart') || '[]'); } catch (e) { return []; } }
+      function save(c) { localStorage.setItem('ca-cart', JSON.stringify(c)); window.dispatchEvent(new Event('ca-cart-updated')); }
+      function render() {
+        var cart = read();
+        var empty = document.getElementById('empty');
+        var lines = document.getElementById('lines');
+        var totals = document.getElementById('totals');
+        if (cart.length === 0) {
+          empty.classList.remove('hidden');
+          lines.classList.add('hidden');
+          totals.classList.add('hidden');
+          return;
+        }
+        empty.classList.add('hidden');
+        lines.classList.remove('hidden');
+        totals.classList.remove('hidden');
+        lines.innerHTML = '';
+        var subtotal = 0;
+        cart.forEach(function (i, idx) {
+          subtotal += i.price_pence * i.quantity;
+          var row = document.createElement('div');
+          row.className = 'flex gap-5 py-5 border-b hairline items-center';
+          row.innerHTML =
+            '<img src="' + (i.image || '') + '" class="w-20 h-24 object-cover" />' +
+            '<div class="flex-1">' +
+              '<a href="/product/' + i.slug + '" class="block text-lg" style="color:var(--color-bone)">' + i.name + '</a>' +
+              '<div class="text-xs uppercase tracking-[0.25em] mt-1" style="color:var(--color-dust)">' + fmt(i.price_pence) + '</div>' +
+            '</div>' +
+            '<div class="flex items-center border hairline">' +
+              '<button data-act="dec" data-i="' + idx + '" class="w-8 h-10 hover:bg-white/5" style="color:var(--color-bone)">−</button>' +
+              '<span class="w-8 text-center" style="color:var(--color-bone)">' + i.quantity + '</span>' +
+              '<button data-act="inc" data-i="' + idx + '" class="w-8 h-10 hover:bg-white/5" style="color:var(--color-bone)">+</button>' +
+            '</div>' +
+            '<div class="w-20 text-right" style="color:var(--color-ember)">' + fmt(i.price_pence * i.quantity) + '</div>' +
+            '<button data-act="rm" data-i="' + idx + '" class="pl-2 text-xs" style="color:var(--color-dust)" title="Remove">×</button>';
+          lines.appendChild(row);
+        });
+        var shipping = subtotal >= 6000 ? 0 : 400;
+        document.getElementById('subtotal').textContent = fmt(subtotal);
+        document.getElementById('shipping').textContent = shipping === 0 ? 'Free' : fmt(shipping);
+        document.getElementById('total').textContent = fmt(subtotal + shipping);
+
+        lines.querySelectorAll('button[data-act]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var act = b.getAttribute('data-act');
+            var idx = parseInt(b.getAttribute('data-i'), 10);
+            var c = read();
+            if (act === 'inc') c[idx].quantity += 1;
+            if (act === 'dec') c[idx].quantity = Math.max(1, c[idx].quantity - 1);
+            if (act === 'rm') c.splice(idx, 1);
+            save(c);
+            render();
+          });
+        });
+      }
+      render();
+
+      document.getElementById('checkout').addEventListener('click', async function () {
+        var btn = this;
+        var errEl = document.getElementById('err');
+        errEl.classList.add('hidden');
+        btn.disabled = true;
+        btn.textContent = 'Opening Stripe…';
+        try {
+          var items = read().map(function (i) { return { id: i.id, quantity: i.quantity }; });
+          var res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: items }),
+          });
+          var body = await res.json();
+          if (!res.ok || !body.url) throw new Error(body.error || 'Checkout failed');
+          window.location.href = body.url;
+        } catch (e) {
+          errEl.textContent = e.message || 'Checkout failed';
+          errEl.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Proceed to checkout';
+        }
+      });
+    })();
+  </script>
+</Base>
